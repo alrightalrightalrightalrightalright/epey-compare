@@ -13,7 +13,7 @@ import Item
 import pandas as pd
 
 # url = input("karşılaştırılacak epey linki: ")
-url = "https://www.epey.com/laptop/e/YToyOntzOjQ6Im96ZWwiO2E6MTp7aTowO3M6Nzoic2F0aXN0YSI7fXM6NToiZml5YXQiO2E6Mjp7aTowO3M6NDoiNDAwMCI7aToxO3M6NjoiMjE4MDAwIjt9fV9OOw==/"
+url = "https://www.epey.com/monitor/e/YToxOntzOjU6ImZpeWF0IjthOjI6e2k6MDtzOjM6Ijc1MCI7aToxO3M6NjoiMTY1MDAwIjt9fV9OOw==/"
 import httpx
 
 
@@ -106,6 +106,10 @@ async def get_page_details(client, page, progress, depolama=False):
 
             columns = [x for x in item.select('li')]
             print(f"cols length is {len(columns)} for url: {page} ")
+
+            if(len(columns) == 1):
+                print(f"skipping because col 1")
+                continue
             row = clean_row(columns)
 
             link = item.select_one('a[class="urunadi"]')["href"]
@@ -126,6 +130,14 @@ def create_session():
     chosen_agent = random.choice(extras.POSSIBLE_AGENTS)
     ses = httpx.AsyncClient(headers=chosen_agent)
     return ses
+
+def shift_right_except_first(row):
+    first_col_value = row.iloc[0]  # Keep the first column value as is
+    rest_values = [val for val in row.iloc[1:] if
+                   val != '']  # Extract non-empty values from the rest of the columns
+    empty_count = len(row) - 1 - len(rest_values)  # Calculate the number of empty cells in the rest of the columns
+    shifted_values = [''] * empty_count + rest_values  # Pad with empty strings on the left
+    return [first_col_value] + shifted_values  # Combine the first column value with the shifted rest
 
 
 async def scrape():
@@ -163,6 +175,19 @@ async def scrape():
 
     # Rename columns based on header
     df.columns = header
+
+    # Split 'Ürün Adı' into multiple attributes
+    attributes = df['Ürün Adı'].str.split('|', expand=True)
+    attributes = attributes.fillna('')
+    attributes = attributes.rename(columns=lambda x: f'attribute{x + 1}')
+
+    # Apply the shift_right_except_first function to each row
+    attributes_shifted = attributes.apply(shift_right_except_first, axis=1, result_type='expand')
+    attributes_shifted.columns = attributes.columns  # Keep the original column names
+
+
+    df = pd.concat([df['Link'], attributes_shifted, df.drop('Ürün Adı', axis=1)], axis=1)
+    df = df.rename(columns={'attribute1': 'Ürün Adı'})
 
     # Create the 'wortluk' column
     if 'Teknik Puan' in header:
